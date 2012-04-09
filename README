@@ -1,0 +1,1 @@
+Implementation of distributed sort based on recursive merge sort algorithm and using zeromq messaging to do interprocess communications.
