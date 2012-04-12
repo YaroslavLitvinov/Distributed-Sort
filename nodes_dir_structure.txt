@@ -1,0 +1,56 @@
+Distributed Sort using 1-Manager node, 5-Src nodes, 5-Dst nodes;
+
+-------------------------------------
+Directories structure for Manager node:
+Directory \IN
+STDIN.1, 				R;
+PULL-Histogram.4, 		R; 		"ipc://histogram"; PULL Histograms from SRC nodes; 
+REQ-Detailed-1Hist.15,	R;		"ipc://details-1" Recv by REQ socket Detailed Histograms from Src1; 
+REQ-Detailed-2Hist.16,	R;		"ipc://details-2" Recv by REQ socket Detailed Histograms from Src2;
+REQ-Detailed-3Hist.17,	R;		"ipc://details-3" Recv by REQ socket Detailed Histograms from Src3;
+REQ-Detailed-4Hist.18,	R;		"ipc://details-4" Recv by REQ socket Detailed Histograms from Src4;
+REQ-Detailed-5Hist.19,	R;		"ipc://details-5" Recv by REQ socket Detailed Histograms from Src5;
+
+
+Directory \OUT
+STDOUT.2, 				RW;		
+STDERR.3, 				RW;
+REQ-Detailed-1Hist.5,	RW;		"ipc://details-1" Send by REQ socket, request for Detailed Histograms from Src1; 
+REQ-Detailed-2Hist.6,	RW;		"ipc://details-2" Send by REQ socket, request for Detailed Histograms from Src2;
+REQ-Detailed-3Hist.7,	RW;		"ipc://details-3" Send by REQ socket, request for Detailed Histograms from Src3;
+REQ-Detailed-4Hist.8,	RW;		"ipc://details-4" Send by REQ socket, request for Detailed Histograms from Src4;
+REQ-Detailed-5Hist.9,	RW;		"ipc://details-5" Send by REQ socket, request for Detailed Histograms from Src5;
+PUSH-Ranges-Req-1.10	RW;		"ipc://range-request-1" PUSH range request to Src1;
+PUSH-Ranges-Req-2.11	RW;		"ipc://range-request-2" PUSH range request to Src2;
+PUSH-Ranges-Req-3.12	RW;		"ipc://range-request-3" PUSH range request to Src3;
+PUSH-Ranges-Req-4.13	RW;		"ipc://range-request-4" PUSH range request to Src4;
+PUSH-Ranges-Req-5.14	RW;		"ipc://range-request-5" PUSH range request to Src5;
+
+-------------------------------------
+Directories structure for single Src node:
+Directory \IN
+STDIN.1, 				R;
+REP-Detailed-Hist.5		R;		"ipc://details-i" Recv by REP socket, requested by Manager;
+PULL-Range-Req.7		R;		"ipc://range-request-i" PULL range request from Manager;
+
+Directory \OUT
+STDOUT.2, 				RW;		
+STDERR.3, 				RW;
+PUSH-Histogram.4, 		RW; 	"ipc://histogram"; PULL Histograms from SRC nodes;
+REP-Detailed-Hist.6		RW;		"ipc://details-i" Send by REP socket, detailed histogram data to Manager;
+REQ-Range-1.8			RW;		"ipc://range-1" Send by REQ socket, locally sorted data to dst node 1
+REQ-Range-2.9			RW;		"ipc://range-2" Send by REQ socket, locally sorted data to dst node 2
+REQ-Range-3.10			RW;		"ipc://range-3" Send by REQ socket, locally sorted data to dst node 3
+REQ-Range-4.11			RW;		"ipc://range-4" Send by REQ socket, locally sorted data to dst node 4
+REQ-Range-5.12			RW;		"ipc://range-5" Send by REQ socket, locally sorted data to dst node 5
+
+-------------------------------------
+Directories structure for single Dst node:
+Directory \IN
+STDIN.1, 				R;
+REP-Range-i.4			R;		"ipc://range-i" Recv by REP socket, locally sorted data from src nodes
+
+Directory \OUT
+STDOUT.2, 				RW;		
+STDERR.3, 				RW;
+REP-Range-i.5			RW;		"ipc://range-i" Send by REP socket, reply ok
