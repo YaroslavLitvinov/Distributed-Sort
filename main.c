@@ -20,6 +20,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <time.h>
 
 //#define DEBUG
 
@@ -122,10 +123,10 @@ check_remove_detailed_histogram( struct histogram_worker* worker ){
 	if ( worker->detailed_histogram.array ){
 		HistogramArrayItem current_item = worker->detailed_histogram.array[worker->helper.end_detailed_histogram_index];
 		int index = 0;
-		for ( int i=0; i < worker->histogram.array_len; i++ ){
-			if ( worker->histogram.array[i].item_index <=
-			     worker->detailed_histogram.array[worker->detailed_histogram.array_len-1].item_index ){
+		for ( int i=worker->helper.end_histogram_index; i < worker->histogram.array_len; i++ ){
+			if ( worker->histogram.array[i].item_index >= current_item.item_index ){
 				index = i;
+				break;
 			}
 		}
 		/*if current item of detailed_histogram is last item from detailed_histogram can be synchronized
@@ -145,7 +146,7 @@ void
 init_histogram( struct histogram_worker* worker ){
 	worker->helper.begin_offset = 0;
 	if ( worker->detailed_histogram.array ){
-		worker->helper.begin_histogram_index = worker->helper.end_histogram_index = -1; //uninitialized can't be used
+		worker->helper.begin_histogram_index = -1; //uninitialized can't be used
 		worker->helper.begin_detailed_histogram_index = worker->helper.end_detailed_histogram_index;
 	}else{
 		worker->helper.begin_histogram_index = worker->helper.end_histogram_index;
@@ -159,6 +160,8 @@ set_detailed_histogram( struct histogram_worker* worker, struct Histogram* detai
 		int big_histogram_first_item_index = worker->histogram.array[worker->helper.end_histogram_index].item_index;
 		/*test: 0 item index of 'detailed histogram' should be equal to last item index of histogram*/
 		assert( detailed_histogram->array[0].item_index == big_histogram_first_item_index );
+		free(worker->detailed_histogram.array);
+		worker->detailed_histogram.array = NULL;
 		worker->detailed_histogram = *detailed_histogram;
 		/*pointing to begin of detailed histogram*/
 		worker->helper.begin_detailed_histogram_index = worker->helper.end_detailed_histogram_index=0;
@@ -177,8 +180,9 @@ set_next_histogram( struct histogram_worker* worker ){
 		worker->helper.end_histogram_index++;
 }
 
-HistogramArrayItem
-value_at_cursor_histogram( struct histogram_worker* worker, int *bounds_ok ){
+
+HistogramArrayPtr
+value_at_cursor_histogram( struct histogram_worker* worker ){
 	struct Histogram *histogram = &worker->histogram;
 	int *end_histogram_index = &worker->helper.end_histogram_index;
 	if ( worker->detailed_histogram.array ){
@@ -187,16 +191,9 @@ value_at_cursor_histogram( struct histogram_worker* worker, int *bounds_ok ){
 	}
 
 	if ( !worker->current_histogram_complete && *end_histogram_index < histogram->array_len){
-		*bounds_ok = 1;
-		return histogram->array[ *end_histogram_index ];
+		return &histogram->array[ *end_histogram_index ];
 	}
-	else{
-		*bounds_ok = 0;
-		HistogramArrayItem item;
-		item.item=0;
-		item.item_index = item.last_item_index = 0;
-		return item;
-	}
+	return 0;
 }
 
 
@@ -242,10 +239,12 @@ get_begin_end_histograms_item_indexes( const struct histogram_worker* worker, in
 int
 size_all_processed_histograms( const struct histogram_worker* array_workers, int array_len ){
 	int count = 0;
+	int begin_index = 0;
+	int end_index = 0;
 	for ( int i=0; i < array_len; i++ )	{
 		const struct histogram_worker* worker = &array_workers[i];
-		int begin_index = 0;
-		int end_index = 0;
+		begin_index = 0;
+		end_index = 0;
 		get_begin_end_histograms_item_indexes( worker, &begin_index, &end_index );
 		count += end_index - begin_index;
 	}
@@ -329,6 +328,7 @@ alloc_range_request_analize_histograms( void *context,
 	}
 	int destination_index = 0;
 	int source_index_of_histogram = -1;
+	int allow_check_remove_detailed_hitogram = 0;
 	do{
 		int last_histograms_requested = 0;
 		int range_count = 0; /*items count processed for all destinations, max=ARRAY_ITEMS_COUNT*len*/
@@ -338,11 +338,6 @@ alloc_range_request_analize_histograms( void *context,
 			}
 		}
 		while( range_count < ARRAY_ITEMS_COUNT ){
-			if (range_count == 99980 && last_histograms_requested )
-			{
-				int t = range_count;
-			}
-
 			source_index_of_histogram = -1;
 			int is_valid_current_item = 0;
 
@@ -350,24 +345,25 @@ alloc_range_request_analize_histograms( void *context,
 			then now switch from detailed to big histogram */
 			for (int i=0; i < len; i++){
 				/*Last requested detailed histograms should not be deleted to use it's data to completion of Analize*/
-				if ( !last_histograms_requested )
+				if ( !last_histograms_requested && allow_check_remove_detailed_hitogram )
 					check_remove_detailed_histogram( &workers[i] );
 			}
 
 			/*search histogram in array of histogram which terms to condition*/
 			/*cycle for histograms*/
 			HistogramArrayItem min_value; min_value.item = 0;
+			HistogramArrayPtr current_value;
 			for ( int i=0; i < len; i++ ){
-				int bounds_ok = 0;
-				HistogramArrayItem current_value = value_at_cursor_histogram( &workers[i], &bounds_ok );
+				current_value = value_at_cursor_histogram( &workers[i] );
+				if ( !current_value ) continue;
 				/*set first item as default minimum value*/
-				if ( -1 == source_index_of_histogram && bounds_ok ){
-					min_value = current_value;
+				if ( -1 == source_index_of_histogram ){
+					min_value = *current_value;
 				}
 				//check both current begin & end are in minimum range
-				if ( current_value.item <= min_value.item && bounds_ok )
+				if ( current_value->item <= min_value.item )
 				{
-					min_value = current_value;
+					min_value = *current_value;
 					source_index_of_histogram = i; /*save source index to use this histogram*/
 				}
 			}
@@ -384,7 +380,10 @@ alloc_range_request_analize_histograms( void *context,
 				 range_count + len*histogram_len >= ARRAY_ITEMS_COUNT)
 			{
 				last_histograms_requested = destination_index+1 >= len;
+				printf("\r#%d Detailed Histograms recv start\n", destination_index );fflush(0);
 				request_assign_detailed_histogram( context, histogram_len, workers, len, last_histograms_requested );
+				printf("\r#%d Detailed Histograms received\n", destination_index );fflush(0);
+				allow_check_remove_detailed_hitogram = 0;
 			}
 		} //while
 		/*save range data based on histograms*/
@@ -406,6 +405,7 @@ alloc_range_request_analize_histograms( void *context,
 				}
 		}
 
+		allow_check_remove_detailed_hitogram = 1;
 		destination_index++;
 	}while( destination_index < len );
 
@@ -1000,12 +1000,10 @@ main(int argc, char **argv){
 	channel_send_source_pids( context, child, SRC_NODES_COUNT );
 	/*--------------------------------------------*/
 
-
 	struct Histogram histograms[SRC_NODES_COUNT];
 	int histogram_array_len = -1;
 
 	channel_recv_histograms( context, histograms, SRC_NODES_COUNT );
-
 	struct request_data_t** range = alloc_range_request_analize_histograms( context, histograms, SRC_NODES_COUNT,
 			child, SRC_NODES_COUNT );
 
